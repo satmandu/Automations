@@ -1,0 +1,132 @@
+blueprint:
+  name: Presence Light Control
+  description: >
+    A lightweight, helper-free automation that controls multiple lights independently.
+    It uses the history of each light to decide if it should turn back on (e.g., if it 
+    was recently turned off by this automation).
+    
+    **Features:**
+    - No Input Booleans needed.
+    - Independent light tracking.
+    - Restart-aware logic.
+  domain: automation
+
+  input:
+    presence_sensor:
+      name: Presence Sensor
+      description: The sensor that triggers the automation.
+      selector:
+        entity:
+          domain: binary_sensor
+
+    target_lights:
+      name: Lights
+      description: The lights to be managed by this automation.
+      selector:
+        entity:
+          domain: light
+          multiple: true
+
+    off_delay:
+      name: Off Delay (seconds)
+      description: How long to wait after presence clears before turning lights off.
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: seconds
+          mode: slider
+
+    allow_restart_on:
+      name: Force Turn-On after Restart
+      description: >
+        If enabled, lights will turn on upon the first motion detection after a Home Assistant 
+        restart, even if they weren't "recently" turned off. 
+        If disabled (default), they stay off until the second cycle.
+      default: false
+      selector:
+        boolean: {}
+
+# Restart mode is essential: If motion is re-detected during the "Off Delay," 
+# the automation resets to keep the lights on.
+mode: restart
+
+variables:
+  # Map inputs to variables for use in templates
+  presence_sensor: !input presence_sensor
+  target_lights: !input target_lights
+  off_delay: !input off_delay
+  allow_restart: !input allow_restart_on
+
+triggers:
+  - trigger: state
+    entity_id: !input presence_sensor
+
+actions:
+  - choose:
+      #######################################################################
+      # CASE 1: Presence Detected
+      #######################################################################
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state.state == 'on' }}"
+        sequence:
+          - repeat:
+              for_each: "{{ target_lights }}"
+              sequence:
+                - variables:
+                    light_entity: "{{ repeat.item }}"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          # Logic: Check if light was turned off near the time the sensor cleared
+                          value_template: >
+                            {% set sensor_off_time = as_timestamp(trigger.from_state.last_changed) if trigger.from_state else 0 %}
+                            {% set l_state = states[light_entity] %}
+                            
+                            {% if l_state and l_state.state != 'on' %}
+                              {% set light_off_time = as_timestamp(l_state.last_changed) | default(0) %}
+                              {% set window = 2 + (off_delay | int) %}
+                              
+                              {# Standard Logic: Was the light turned off by the previous 'off' trigger? #}
+                              {% set in_window = (light_off_time - sensor_off_time) | abs <= window %}
+                              
+                              {# Restart Fallback: If HA just booted, last_changed is very recent #}
+                              {% set ha_rebooted = (as_timestamp(now()) - light_off_time) < 60 %}
+                              
+                              {{ in_window or (allow_restart and ha_rebooted) }}
+                            {% else %}
+                              false
+                            {% endif %}
+                      sequence:
+                        - action: light.turn_on
+                          target:
+                            entity_id: "{{ light_entity }}"
+              # Safety: If one light fails or is unavailable, don't stop the whole loop.
+              continue_on_error: true
+
+      #######################################################################
+      # CASE 2: Presence Cleared
+      #######################################################################
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state.state == 'off' }}"
+        sequence:
+          - delay:
+              seconds: !input off_delay
+
+          # Guard: Only turn off if presence hasn't returned during the delay
+          - condition: state
+            entity_id: !input presence_sensor
+            state: "off"
+
+          - repeat:
+              for_each: "{{ target_lights }}"
+              sequence:
+                - condition: template
+                  value_template: "{{ is_state(repeat.item, 'on') }}"
+                - action: light.turn_off
+                  target:
+                    entity_id: "{{ repeat.item }}"
+              continue_on_error: true
