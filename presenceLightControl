@@ -103,8 +103,8 @@ actions:
                         - action: light.turn_on
                           target:
                             entity_id: "{{ light_entity }}"
-              # Safety: If one light fails or is unavailable, don't stop the whole loop.
-              continue_on_error: true
+            # Safety: If one light fails or is unavailable, don't stop the whole loop.
+            continue_on_error: true
 
       #######################################################################
       # CASE 2: Presence Cleared
@@ -129,4 +129,4 @@ actions:
                 - action: light.turn_off
                   target:
                     entity_id: "{{ repeat.item }}"
-              continue_on_error: true
+                  continue_on_error: true
