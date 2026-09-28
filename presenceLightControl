@@ -12,20 +12,25 @@ blueprint:
   domain: automation
 
   input:
-    presence_sensor:
-      name: Presence Sensor
+    motion_entity:
+      name: Motion Sensor
       description: The sensor that triggers the automation.
       selector:
         entity:
-          domain: binary_sensor
+          filter:
+            - device_class: occupancy
+              domain: binary_sensor
+            - device_class: motion
+              domain: binary_sensor
 
     target_lights:
       name: Lights
       description: The lights to be managed by this automation.
       selector:
-        entity:
-          domain: light
-          multiple: true
+        target:
+          entity:
+            domain: light
+            multiple: true
 
     off_delay:
       name: Off Delay (seconds)
@@ -54,14 +59,14 @@ mode: restart
 
 variables:
   # Map inputs to variables for use in templates
-  presence_sensor: !input presence_sensor
+  motion_entity: !input motion_entity
   target_lights: !input target_lights
   off_delay: !input off_delay
   allow_restart: !input allow_restart_on
 
 triggers:
   - trigger: state
-    entity_id: !input presence_sensor
+    entity_id: !input motion_entity
 
 actions:
   - choose:
@@ -118,7 +123,7 @@ actions:
 
           # Guard: Only turn off if presence hasn't returned during the delay
           - condition: state
-            entity_id: !input presence_sensor
+            entity_id: !input motion_entity
             state: "off"
 
           - repeat:
