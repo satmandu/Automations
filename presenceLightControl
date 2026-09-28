@@ -27,10 +27,9 @@ blueprint:
       name: Lights
       description: The lights to be managed by this automation.
       selector:
-        target:
-          entity:
-            domain: light
-            multiple: true
+        entity:
+          domain: light
+          multiple: true
 
     off_delay:
       name: Off Delay (seconds)
